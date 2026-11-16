@@ -1,0 +1,881 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Suspension Log</title>
+<meta name="description" content="Log fork, shock and tyre settings per bike, see every change, keep a service log.">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101010" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Suspension">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{color-scheme:light;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+[hidden]{display:none!important}
+img{max-width:100%}
+/* Layout: a flat spec sheet. One phone-width column on plain paper, sections divided by
+   hairline rules instead of boxes, mono labels and numerals, square-ish controls, no shadows.
+   Ink does all the work; orange appears only where a value differs from what is saved. */
+:root{
+  --bg:#FFFFFF; --sunk:#F2F2F0; --ink:#121212; --muted:#6A6A65; --line:#DFDFDB;
+  --change:#C2410C; --change-soft:#FFF0E6; --bad:#B42318; --bad-soft:#FDECEA; --ok:#1A7F37;
+  --scrim:rgba(18,18,18,.4);
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#101010; --sunk:#1D1D1C; --ink:#F1F1EE; --muted:#9B9B95; --line:#2D2D2B;
+    --change:#FF8A4C; --change-soft:#2B1A0F; --bad:#FF7B72; --bad-soft:#2E1513; --ok:#4AC26B;
+    --scrim:rgba(0,0,0,.6); color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#101010; --sunk:#1D1D1C; --ink:#F1F1EE; --muted:#9B9B95; --line:#2D2D2B;
+  --change:#FF8A4C; --change-soft:#2B1A0F; --bad:#FF7B72; --bad-soft:#2E1513; --ok:#4AC26B;
+  --scrim:rgba(0,0,0,.6); color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.4 var(--sans)}
+body.locked{overflow:hidden}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+button,input,select,textarea{font:inherit;color:inherit;margin:0}
+button{touch-action:manipulation;cursor:pointer;-webkit-tap-highlight-color:transparent}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+h2,h3,p{margin:0}
+
+#app{max-width:560px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 160px}
+
+/* header */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);display:flex;align-items:center;gap:12px;padding-block:12px;border-bottom:1px solid var(--ink);margin-bottom:16px}
+.bike-btn{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;background:none;border:0;padding:0;text-align:left}
+.eyebrow,.sec h3,legend,.tab,.tag,.pill,.svc-d,.lbl,.fld>span{font:500 11px/1.3 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.bike-name{display:flex;align-items:center;gap:6px;max-width:100%;font:600 22px/1.2 var(--sans);letter-spacing:-.01em}
+.bike-name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bike-name svg{flex:none}
+.icon-btn{flex:none;min-width:44px;height:44px;padding:0 10px;display:grid;place-items:center;border-radius:6px;border:1px solid var(--line);background:none;position:relative;font-size:14px;font-weight:500;line-height:1}
+.sync-dot{position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--muted)}
+[data-s="ok"] .sync-dot,.sync-line[data-s="ok"] i{background:var(--ok)}
+[data-s="wait"] .sync-dot,.sync-line[data-s="wait"] i{background:var(--change)}
+[data-s="off"] .sync-dot,.sync-line[data-s="off"] i{background:var(--bad)}
+.warn{background:var(--sunk);border-radius:6px;padding:10px 12px;font-size:14px;margin-bottom:16px}
+.warn button{background:none;border:0;padding:0;font-weight:600;text-decoration:underline}
+
+/* setup tabs */
+.chips{display:flex;gap:20px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--line);margin-bottom:20px}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;display:inline-flex;align-items:center;gap:6px;height:44px;padding:0;border:0;border-bottom:2px solid transparent;border-radius:0;background:none;color:var(--muted);font-weight:500;white-space:nowrap;margin-bottom:-1px}
+.chip.on{color:var(--ink);border-bottom-color:var(--ink);font-weight:600}
+.chip .dot{width:6px;height:6px;background:currentColor}
+.chip.dirty::after{content:"";width:6px;height:6px;border-radius:50%;background:var(--change)}
+
+.shead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:24px}
+.shead>div{min-width:0}
+.shead h2{font:600 20px/1.25 var(--sans);letter-spacing:-.01em;text-wrap:balance;overflow-wrap:anywhere}
+.meta{color:var(--muted);font-size:14px}
+.meta b{color:var(--ink);font-weight:600}
+
+/* value sections: a label, a rule, rows */
+.card{margin-bottom:28px}
+.sec{display:flex;align-items:center;gap:10px;min-height:36px;padding-bottom:6px;border-bottom:1px solid var(--ink)}
+.sec h3{color:var(--ink);font-weight:600}
+.sec-sub{flex:1;min-width:0;color:var(--muted);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sec .seg{margin-left:auto}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:8px;border-bottom:1px solid var(--line)}
+.row-l{min-width:0;display:flex;flex-direction:column}
+.row-n{font-weight:500;font-size:16px;line-height:1.3}
+.row-s{color:var(--muted);font-size:13px;line-height:1.3}
+.was{color:var(--change);font:500 12px/1.4 var(--mono)}
+.step{flex:none;display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.st{width:44px;height:44px;border:0;border-radius:0;background:var(--sunk);font:400 20px/1 var(--mono);display:grid;place-items:center;padding:0}
+.st:active{background:var(--line)}
+.st:focus-visible,.step input:focus-visible{outline-offset:-2px}
+.step input{width:72px;height:44px;border:0;border-inline:1px solid var(--line);border-radius:0;background:var(--bg);text-align:center;font:500 18px/1 var(--mono);font-variant-numeric:tabular-nums;padding:0 4px}
+.step input::placeholder{color:var(--muted);opacity:.6}
+.row.changed .step{border-color:var(--change)}
+.row.changed .step input{background:var(--change-soft);color:var(--change);border-color:var(--change)}
+textarea{width:100%;display:block;border:1px solid var(--line);border-radius:6px;background:var(--bg);padding:10px 12px;font-size:16px;line-height:1.4;resize:vertical;min-height:88px}
+.card textarea{margin-top:10px}
+.card textarea.changed{border-color:var(--change)}
+.foot{color:var(--muted);font-size:13px}
+
+/* segmented + toggles */
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button,.seg label span{display:block;min-width:46px;min-height:30px;padding:5px 10px;border:0;border-radius:0;background:none;font:500 12px/1.6 var(--mono);text-align:center;color:var(--muted)}
+.seg button.on,.seg input:checked+span{background:var(--ink);color:var(--bg)}
+.seg label{cursor:pointer}
+.seg input,.tog input{position:absolute;opacity:0;pointer-events:none}
+.seg input:focus-visible+span,.tog input:focus-visible+span{outline:2px solid var(--ink);outline-offset:-2px}
+.seg button:focus-visible{outline-offset:-2px}
+.togs{display:flex;flex-wrap:wrap;gap:6px}
+.tog span{display:inline-flex;align-items:center;min-height:40px;padding:0 12px;border-radius:6px;border:1px solid var(--line);font-size:14px;font-weight:500;color:var(--muted);cursor:pointer}
+.tog input:checked+span{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 16px;border-radius:6px;border:1px solid var(--line);background:none;font-weight:500;font-size:15px;white-space:nowrap}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn.ghost{border-color:transparent}
+.btn.danger{color:var(--bad)}
+.btn.armed,.link.armed{background:var(--bad-soft);color:var(--bad);border-color:var(--bad)}
+.btn.block{display:flex;width:100%}
+.link{background:none;border:1px solid transparent;border-radius:6px;padding:0;min-height:40px;font-weight:500;font-size:14px;text-decoration:underline;text-underline-offset:3px}
+.link.quiet{color:var(--muted)}
+.link.armed{padding:0 8px;text-decoration:none}
+
+/* save bar + tabs */
+#savebar{position:fixed;left:0;right:0;bottom:calc(52px + env(safe-area-inset-bottom,0px));z-index:6;background:var(--change-soft);border-top:1px solid var(--change);padding:0 max(16px,env(safe-area-inset-left,0px)) 0 max(16px,env(safe-area-inset-right,0px))}
+.savebar-in{max-width:528px;margin:0 auto;display:flex;align-items:center;gap:8px;padding-block:8px}
+.savebar-in span{flex:1;min-width:0;font-weight:500;font-size:14px;color:var(--change)}
+.savebar-in .btn{min-height:40px}
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--bg);border-top:1px solid var(--ink);padding:0 max(16px,env(safe-area-inset-left,0px)) env(safe-area-inset-bottom,0px) max(16px,env(safe-area-inset-right,0px))}
+.tabs-in{max-width:528px;margin:0 auto;display:flex}
+.tab{flex:1;height:52px;background:none;border:0;border-top:2px solid transparent;margin-top:-1px;font-size:12px}
+.tab.on{color:var(--ink);border-top-color:var(--ink);font-weight:600}
+
+/* history */
+.h{padding-block:16px;border-bottom:1px solid var(--line)}
+.h:first-of-type{padding-top:0}
+.h-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.h time{font:500 13px/1.3 var(--mono)}
+.tag{flex:none;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.msg{margin-top:6px;overflow-wrap:anywhere;white-space:pre-wrap}
+.diff{list-style:none;margin:8px 0 0;padding:0}
+.diff li{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding-block:5px;font-size:15px}
+.diff li span{color:var(--muted);min-width:0}
+.diff li b{font:500 15px/1.3 var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.diff li b i{font-style:normal;color:var(--muted);font-weight:400}
+.diff .start{color:var(--muted);font-size:14px;padding-bottom:0}
+.h details{margin-top:4px}
+.h summary{font-weight:500;font-size:14px;cursor:pointer;padding-block:8px;text-decoration:underline;text-underline-offset:3px;list-style:none}
+.h summary::-webkit-details-marker{display:none}
+.vals{display:grid;grid-template-columns:1fr 1fr;gap:0 20px;margin-top:4px;font-size:14px}
+.vals div{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding-block:4px}
+.vals span{color:var(--muted);min-width:0}
+.vals b{font:500 14px/1.3 var(--mono);white-space:nowrap}
+.h-act{display:flex;justify-content:space-between;gap:8px;margin-top:6px}
+.snote{margin-top:6px;color:var(--muted);font-size:14px;overflow-wrap:anywhere;white-space:pre-wrap}
+.snote b{font-weight:500}
+
+/* service */
+.due{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:10px;border-bottom:1px solid var(--line)}
+.due span{min-width:0}
+.pill{flex:none;white-space:nowrap}
+.pill.soon{color:var(--change)}
+.pill.over{color:var(--bad)}
+.svc{display:flex;gap:14px;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:12px 0}
+.svc-d{flex:none;width:44px;line-height:1.3}
+.svc-d b{display:block;font:500 20px/1.1 var(--mono);color:var(--ink);letter-spacing:0}
+.svc-b{min-width:0;flex:1}
+.svc-t{font-weight:500;font-size:16px;line-height:1.3}
+.svc-n{color:var(--muted);font-size:14px;overflow-wrap:anywhere;white-space:pre-wrap}
+.svc-m{color:var(--muted);font-size:13px}
+
+/* empty states */
+.empty{padding-top:8px}
+.empty h2{font:600 20px/1.25 var(--sans);letter-spacing:-.01em;margin-bottom:6px;text-wrap:balance}
+.empty p{color:var(--muted);margin-bottom:16px;max-width:42ch}
+
+/* sheet */
+#scrim{position:fixed;inset:0;z-index:20;background:var(--scrim)}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;max-width:560px;margin:0 auto;max-height:90%;overflow-y:auto;overscroll-behavior:contain;background:var(--bg);border-top:1px solid var(--ink);padding:20px max(16px,env(safe-area-inset-right,0px)) calc(16px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.grab{display:none}
+.sheet h2{font:600 20px/1.25 var(--sans);letter-spacing:-.01em;margin-bottom:16px;overflow-wrap:anywhere}
+.sheet form,.stack{display:flex;flex-direction:column;gap:14px}
+.fld{display:flex;flex-direction:column;gap:6px}
+.fld input,.fld select{height:44px;border:1px solid var(--line);border-radius:6px;background:var(--bg);padding:0 12px;font-size:16px;width:100%;min-width:0}
+fieldset{border:0;border-top:1px solid var(--ink);padding:12px 0 0;margin:6px 0 0;display:flex;flex-direction:column;gap:12px;min-width:0}
+legend{color:var(--ink);font-weight:600;padding:0 8px 0 0}
+.check{display:flex;align-items:center;gap:10px;min-height:40px}
+.check input{width:18px;height:18px;accent-color:var(--ink)}
+.hint{color:var(--muted);font-size:13px}
+.actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:4px}
+.actions .grow{margin-right:auto}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.quick{display:flex;gap:16px;flex-wrap:wrap;margin-top:-8px}
+.pick{display:flex;gap:8px;align-items:stretch}
+.pick-main{flex:1;min-width:0;text-align:left;background:none;border:1px solid var(--line);border-radius:6px;padding:8px 12px;display:flex;flex-direction:column}
+.pick-main.on{border-color:var(--ink)}
+.pick-main b{font-weight:600;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pick-main span{color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pick .icon-btn{height:auto;min-height:44px}
+.setrow{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.sync-line{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:14px}
+.sync-line i{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(116px + env(safe-area-inset-bottom,0px));z-index:30;background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:6px;font-weight:500;font-size:14px;width:max-content;max-width:min(340px,calc(100% - 32px));text-align:center}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <button type="button" class="bike-btn" data-act="bike-menu" aria-label="Switch bike">
+      <span class="eyebrow">Bike</span>
+      <span class="bike-name"><span id="bikeName">Suspension Log</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span>
+    </button>
+    <button type="button" class="icon-btn" id="setBtn" data-act="settings" data-s="wait" aria-label="Settings">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <i class="sync-dot"></i>
+    </button>
+  </header>
+  <div id="warn" class="warn" hidden></div>
+  <main id="view"></main>
+</div>
+
+<div id="savebar" hidden><div class="savebar-in"><span id="saveN"></span><button type="button" class="btn" data-act="discard" data-arm="Tap again">Discard</button><button type="button" class="btn primary" data-act="save-open">Save</button></div></div>
+
+<nav class="tabs" aria-label="Sections"><div class="tabs-in">
+  <button type="button" class="tab" data-act="tab" data-tab="setup">Setup</button>
+  <button type="button" class="tab" data-act="tab" data-tab="history">History</button>
+  <button type="button" class="tab" data-act="tab" data-tab="service">Service</button>
+</div></nav>
+
+<div id="scrim" data-act="close" hidden></div>
+<section id="sheet" class="sheet" role="dialog" aria-modal="true" hidden></section>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+(function(){
+"use strict";
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const LS={
+  get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},
+  set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+};
+const obj=(v)=>v&&typeof v==="object"&&!Array.isArray(v)?v:{};
+const newId=p=>p+"_"+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const PSI=14.5038;
+const r3=n=>Math.round(n*1000)/1000;
+
+/* ---------- state ---------- */
+let docs=obj(LS.get("sus.docs.v1",{}));      // id -> document body (bikes, setups, history, services, settings)
+let outbox=obj(LS.get("sus.outbox.v1",{}));  // id -> body | null, waiting to be sent
+let drafts=obj(LS.get("sus.drafts.v1",{}));  // setupId -> {vals,note}, unsaved edits on this device
+let ui=obj(LS.get("sus.ui.v1",{}));          // {bike, setup:{bikeId:setupId}, tab, hf}
+ui.setup=obj(ui.setup);if(!["setup","history","service"].includes(ui.tab))ui.tab="setup";
+const view=$("#view"),sheet=$("#sheet"),scrim=$("#scrim");
+let pending=false;
+
+const all=t=>Object.keys(docs).filter(id=>docs[id]&&docs[id].t===t).map(id=>({id,...docs[id]}));
+const bikes=()=>all("bike").sort((a,b)=>(a.ts||0)-(b.ts||0));
+const setupsOf=b=>all("setup").filter(s=>s.bikeId===b).sort((a,b)=>(a.ts||0)-(b.ts||0));
+const histOf=b=>all("hist").filter(h=>h.bikeId===b).sort((a,b)=>(a.ts||0)-(b.ts||0));
+const svcOf=b=>all("svc").filter(s=>s.bikeId===b).sort((a,b)=>a.date===b.date?(b.ts||0)-(a.ts||0):(a.date<b.date?1:-1));
+const settings=()=>{const s=obj(docs._settings);return{tyre:s.tyre==="bar"?"bar":"psi",susp:s.susp==="bar"?"bar":"psi"}};
+const saveUi=()=>LS.set("sus.ui.v1",ui);
+const saveDrafts=()=>LS.set("sus.drafts.v1",drafts);
+
+function normBike(b){
+  const part=(p,d)=>{p=obj(p);return{name:typeof p.name==="string"?p.name:"",spring:p.spring==="coil"?"coil":"air",adj:Array.isArray(p.adj)?p.adj:d,on:p.on!==false}};
+  return{...b,fork:part(b.fork,["lsc","lsr","tok"]),shock:part(b.shock,["lsc","lsr","tok"])};
+}
+function curBike(){
+  const l=bikes();if(!l.length)return null;
+  let b=l.find(x=>x.id===ui.bike);if(!b){b=l[0];ui.bike=b.id;saveUi()}
+  return normBike(b);
+}
+function curSetup(b){
+  const l=setupsOf(b.id);if(!l.length)return null;
+  let s=l.find(x=>x.id===ui.setup[b.id])||l.find(x=>x.id===b.active)||l[0];
+  if(ui.setup[b.id]!==s.id){ui.setup[b.id]=s.id;saveUi()}
+  return{...s,vals:obj(s.vals),note:s.note||""};
+}
+const working=s=>drafts[s.id]?{vals:obj(drafts[s.id].vals),note:drafts[s.id].note||""}:{vals:s.vals,note:s.note};
+
+/* ---------- storage: copy on this device + sync to the user's private Claude data ---------- */
+const inClaude=!!(window.claude&&window.claude.use);
+let col=null,mode=inClaude?"wait":"local",why="",unsub=null,flushing=false,sendFail=false,slow=false,slowT=null;
+
+function overlay(remote){
+  const m={...remote};
+  for(const k in outbox){if(outbox[k]===null)delete m[k];else m[k]=outbox[k]}
+  return m;
+}
+function queue(id,v){
+  if(!inClaude)return;
+  outbox[id]=v;LS.set("sus.outbox.v1",outbox);status();flush();
+}
+async function flush(){
+  if(!col||flushing)return;
+  flushing=true;sendFail=false;
+  try{
+    let again=true;
+    while(again&&!sendFail){
+      again=false;
+      for(const k of Object.keys(outbox)){
+        const v=outbox[k];
+        try{
+          if(v===null)await col.doc(k).delete();else await col.doc(k).set(v);
+          if(outbox[k]===v){delete outbox[k];LS.set("sus.outbox.v1",outbox)}else again=true;
+        }catch(e){sendFail=true;break}
+      }
+    }
+  }finally{flushing=false;status()}
+}
+function put(id,data){docs[id]=data;LS.set("sus.docs.v1",docs);queue(id,data)}
+function del(id){delete docs[id];LS.set("sus.docs.v1",docs);queue(id,null)}
+function subscribe(){
+  if(unsub){try{unsub()}catch(e){}}
+  mode="wait";slow=false;clearTimeout(slowT);
+  slowT=setTimeout(()=>{slow=true;status()},10000);
+  status();
+  unsub=col.limit(1000).onSnapshot(snap=>{
+    const remote={};
+    snap.docs.forEach(d=>{const b=d.data();if(b&&typeof b.t==="string")remote[d.id]=JSON.parse(JSON.stringify(b))});
+    docs=overlay(remote);LS.set("sus.docs.v1",docs);
+    if(!snap.metadata||!snap.metadata.fromCache){
+      clearTimeout(slowT);slow=false;
+      /* only a confirmed answer may drop unsaved edits of a setup that no longer exists */
+      let cut=false;for(const id in drafts){if(!docs[id]||docs[id].t!=="setup"){delete drafts[id];cut=true}}
+      if(cut)saveDrafts();
+    }
+    const first=mode!=="ok";mode="ok";
+    if(first)flush();
+    status();render();
+  },()=>{clearTimeout(slowT);slow=false;mode="down";status()});
+}
+async function initSync(){
+  if(!inClaude){why="This copy is open outside Claude, so everything you log stays on this device only.";status();return}
+  let db=null,user=null,id=null;
+  try{[db,user]=await Promise.all([window.claude.use("db"),window.claude.use("user")])}catch(e){}
+  if(db&&user){try{id=await user.id()}catch(e){}}
+  if(!id){mode="local";why="You are not signed in to Claude here. Changes stay on this device and are sent once you open this page signed in.";status();return}
+  col=db.collection("data/users/"+id);
+  subscribe();
+}
+let statusText="";
+function status(){
+  const n=Object.keys(outbox).length;let s,t,w="";
+  const retry=' <button type="button" data-act="retry">Try again</button>';
+  if(mode==="local"){s="";t="Saved on this device only"}
+  else if(mode==="down"){s="off";t="Sync stopped";w="Sync stopped. Changes are kept on this device and sent when the connection is back."+retry}
+  else if(mode==="wait"){s="wait";t="Connecting…";if(slow)w="Your saved data can't be reached yet. You are seeing the copy kept on this device."}
+  else if(n&&sendFail){s="off";t="Waiting to send";w="Some changes could not be sent. They are kept on this device."+retry}
+  else if(n){s="wait";t="Sending changes…"}
+  else{s="ok";t="Synced";if(slow)w="Showing the copy kept on this device. It may be out of date."}
+  statusText=t;
+  $("#setBtn").dataset.s=s;$("#setBtn").title=t;
+  const l=$("#syncLine");if(l){l.dataset.s=s;l.querySelector("span").textContent=t}
+  $("#warn").hidden=!w;$("#warn").innerHTML=w;
+}
+
+/* ---------- fields ---------- */
+const KEYS=["f_p","f_rate","f_sag","f_tok","f_hsc","f_lsc","f_hsr","f_lsr","s_p","s_rate","s_sag","s_tok","s_hsc","s_lsc","s_hsr","s_lsr","t_f","t_r","kg"];
+const ADJ=[["hsc","HSC","High-speed compression"],["lsc","LSC","Low-speed compression"],["hsr","HSR","High-speed rebound"],["lsr","LSR","Low-speed rebound"]];
+function fields(b){
+  const out=[];
+  for(const [p,title,cfg] of [["f","Fork",b.fork],["s","Shock",b.shock]]){
+    if(p==="s"&&!cfg.on)continue;
+    const rows=[],a=cfg.adj;
+    if(cfg.spring==="coil")rows.push({k:p+"_rate",name:"Spring rate",sub:p==="f"?"as printed on the spring":null});
+    else rows.push({k:p+"_p",name:"Air pressure"});
+    rows.push({k:p+"_sag",name:"Sag"});
+    if(cfg.spring!=="coil"&&a.includes("tok"))rows.push({k:p+"_tok",name:"Volume spacers",sub:"tokens"});
+    for(const [k,ab,long] of ADJ){
+      if(!a.includes(k))continue;
+      let name=ab,sub="clicks";
+      if(k==="lsc"&&!a.includes("hsc")){name="Compression";sub="clicks"}
+      if(k==="lsr"&&!a.includes("hsr")){name="Rebound";sub="clicks"}
+      rows.push({k:p+"_"+k,name,sub});
+    }
+    out.push({key:p,title,sub:cfg.name,rows});
+  }
+  out.push({key:"t",title:"Tyres",rows:[{k:"t_f",name:"Front"},{k:"t_r",name:"Rear"}]});
+  out.push({key:"r",title:"Rider",rows:[{k:"kg",name:"Weight with gear"}]});
+  return out;
+}
+function metaK(k){
+  const s=settings(),f=k[0]==="f",a=k.split("_")[1];
+  if(k==="t_f"||k==="t_r"){const bar=s.tyre==="bar";return{unit:s.tyre,p:true,bar,step:bar?0.05:0.5,dec:bar?2:1,start:bar?(k==="t_f"?1.5:1.7):(k==="t_f"?22:25)}}
+  if(k==="kg")return{unit:"kg",step:1,dec:1,start:75};
+  if(a==="p"){const bar=s.susp==="bar";return{unit:s.susp,p:true,bar,step:bar?0.1:1,dec:1,start:bar?(f?5.5:12.5):(f?80:180)}}
+  if(a==="rate")return f?{unit:"",step:1,dec:1,start:45}:{unit:"lb/in",step:25,dec:0,start:450};
+  if(a==="sag")return{unit:"%",step:1,dec:0,start:f?20:30};
+  return{unit:"",step:1,dec:a==="tok"?1:0,start:0};
+}
+/* Pressures are stored in psi and only converted for display, so switching units never rewrites a value. */
+const toDisp=(k,v)=>{const m=metaK(k);return m.p&&m.bar?v/PSI:v};
+const canon=(k,d)=>{const m=metaK(k);d=+d.toFixed(m.dec+1);return r3(m.p&&m.bar?d*PSI:d)};
+const num=(k,v)=>String(parseFloat(toDisp(k,v).toFixed(metaK(k).dec)));
+function fmt(k,v){
+  if(v==null)return"–";
+  const u=metaK(k).unit,n=num(k,v);
+  return u==="%"?n+"%":u?n+" "+u:n;
+}
+const wasText=(k,sv)=>sv==null?"new":"was "+fmt(k,sv);
+function keyLabel(k,b){
+  if(k==="t_f")return"Front tyre";if(k==="t_r")return"Rear tyre";if(k==="kg")return"Rider weight";if(k==="note")return"Notes";
+  const [p,a]=k.split("_"),cfg=b?(p==="f"?b.fork:b.shock):null,adj=cfg?cfg.adj:[];
+  const m={p:"pressure",rate:"spring rate",sag:"sag",tok:"spacers",hsc:"HSC",lsc:adj.includes("hsc")?"LSC":"compression",hsr:"HSR",lsr:adj.includes("hsr")?"LSR":"rebound"};
+  return(p==="f"?"Fork ":"Shock ")+m[a];
+}
+function diff(a,b){
+  const out=[],av=obj(a.vals),bv=obj(b.vals);
+  for(const k of KEYS){const x=av[k]==null?null:av[k],y=bv[k]==null?null:bv[k];if(x!==y)out.push({k,from:x,to:y})}
+  if((a.note||"")!==(b.note||""))out.push({k:"note"});
+  return out;
+}
+const diffHtml=(list,b)=>list.map(d=>d.k==="note"?`<li><span>Notes</span><b><i>edited</i></b></li>`:`<li><span>${esc(keyLabel(d.k,b))}</span><b><i>${esc(d.from==null?"–":num(d.k,d.from))} →</i> ${esc(fmt(d.k,d.to))}</b></li>`).join("");
+
+/* ---------- dates ---------- */
+const pad=n=>String(n).padStart(2,"0");
+const iso=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const today=()=>iso(new Date());
+const parseD=s=>{const p=String(s).split("-").map(Number);return new Date(p[0],(p[1]||1)-1,p[2]||1)};
+const dayDiff=(a,b)=>Math.round((parseD(a)-parseD(b))/864e5);
+const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const dShort=s=>{const d=parseD(s);return d.getDate()+" "+MON[d.getMonth()]+(d.getFullYear()!==new Date().getFullYear()?" "+d.getFullYear():"")};
+const dTime=ts=>{const d=new Date(ts);return d.getDate()+" "+MON[d.getMonth()]+" "+d.getFullYear()+", "+pad(d.getHours())+":"+pad(d.getMinutes())};
+function ago(n){
+  if(n<=0)return"today";if(n===1)return"yesterday";if(n<14)return n+" days ago";
+  if(n<60)return Math.round(n/7)+" weeks ago";if(n<365)return Math.round(n/30.4)+" months ago";
+  const y=Math.round(n/36.5)/10;return y+(y===1?" year ago":" years ago");
+}
+function addMonths(s,m){const d=parseD(s);const day=d.getDate();d.setDate(1);d.setMonth(d.getMonth()+m);d.setDate(Math.min(day,new Date(d.getFullYear(),d.getMonth()+1,0).getDate()));return iso(d)}
+
+/* ---------- render ---------- */
+function render(force){
+  const b=curBike();
+  $("#bikeName").textContent=b?b.name:"Suspension Log";
+  document.querySelectorAll(".tab").forEach(t=>{const on=t.dataset.tab===ui.tab;t.classList.toggle("on",on);if(on)t.setAttribute("aria-current","page");else t.removeAttribute("aria-current")});
+  const a=document.activeElement;
+  if(!force&&a&&view.contains(a)&&(a.tagName==="INPUT"||a.tagName==="TEXTAREA")){pending=true;updateSaveBar();return}
+  pending=false;
+  if(!b)view.innerHTML=emptyHtml();
+  else if(ui.tab==="history")view.innerHTML=historyHtml(b);
+  else if(ui.tab==="service")view.innerHTML=serviceHtml(b);
+  else view.innerHTML=setupHtml(b);
+  updateSaveBar();
+}
+function emptyHtml(){
+  if(ui.tab!=="setup")return`<div class="empty"><h2>Add a bike first</h2><p>${ui.tab==="history"?"Every time you save a setup, the change lands here with the date and your note.":"Lower leg services, air can services, brake bleeds and anything else you want to remember."}</p><button type="button" class="btn primary" data-act="bike-new">Add your first bike</button></div>`;
+  return`<div class="empty"><h2>No bikes yet</h2>
+  <p>Add a bike, then log pressures, sag, clicks and tyre pressure. Every save is kept, so you can see what you changed and go back.</p>
+  <button type="button" class="btn primary" data-act="bike-new">Add your first bike</button></div>`;
+}
+function unitSeg(which){
+  const u=settings()[which];
+  return`<div class="seg" role="group" aria-label="Pressure unit">${["psi","bar"].map(x=>`<button type="button" class="${u===x?"on":""}" aria-pressed="${u===x}" data-act="unit" data-which="${which}" data-u="${x}">${x}</button>`).join("")}</div>`;
+}
+function rowHtml(r,w,s){
+  const v=w.vals[r.k]==null?null:w.vals[r.k],sv=s.vals[r.k]==null?null:s.vals[r.k],ch=v!==sv,m=metaK(r.k);
+  const sub=r.sub!=null?r.sub:m.unit;
+  return`<div class="row${ch?" changed":""}" data-k="${r.k}">
+    <div class="row-l"><span class="row-n">${esc(r.name)}</span>${sub?`<span class="row-s">${esc(sub)}</span>`:""}<span class="was"${ch?"":" hidden"}>${ch?esc(wasText(r.k,sv)):""}</span></div>
+    <div class="step"><button type="button" class="st" data-act="step" data-k="${r.k}" data-d="-1" aria-label="Lower ${esc(r.name)}">−</button><input id="v_${r.k}" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" placeholder="–" value="${v==null?"":esc(num(r.k,v))}" aria-label="${esc(r.name)}"><button type="button" class="st" data-act="step" data-k="${r.k}" data-d="1" aria-label="Raise ${esc(r.name)}">+</button></div>
+  </div>`;
+}
+function setupHtml(b){
+  const list=setupsOf(b.id),s=curSetup(b);
+  if(!s)return`<div class="empty"><h2>No setups on this bike yet</h2><p>A setup is one full set of settings, for example your everyday trail setup.</p><button type="button" class="btn primary" data-act="setup-new">Add a setup</button></div>`;
+  const w=working(s),saves=all("hist").filter(h=>h.setupId===s.id).length;
+  let h=`<div class="chips">`+list.map(x=>`<button type="button" class="chip${x.id===s.id?" on":""}${drafts[x.id]?" dirty":""}" data-act="setup-pick" data-id="${x.id}"${x.id===s.id?' aria-current="true"':""}>${b.active===x.id?'<i class="dot" title="On the bike"></i>':""}${esc(x.name)}</button>`).join("")+`<button type="button" class="chip add" data-act="setup-new">+ New</button></div>`;
+  h+=`<div class="shead"><div><h2>${esc(s.name)}</h2><p class="meta">${b.active===s.id?"<b>On the bike</b> · ":""}${saves?"Saved "+ago(dayDiff(today(),iso(new Date(s.updated||s.ts||Date.now()))))+" · "+saves+(saves===1?" save":" saves"):"Nothing saved yet"}</p></div><button type="button" class="icon-btn" data-act="setup-menu" aria-label="Setup options">⋯</button></div>`;
+  let clicks=false;
+  for(const sec of fields(b)){
+    if(sec.rows.some(r=>/_(hsc|lsc|hsr|lsr)$/.test(r.k)))clicks=true;
+    h+=`<section class="card"><header class="sec"><h3>${sec.title}</h3>${sec.sub?`<span class="sec-sub">${esc(sec.sub)}</span>`:""}${sec.key==="t"?unitSeg("tyre"):""}</header>${sec.rows.map(r=>rowHtml(r,w,s)).join("")}</section>`;
+  }
+  h+=`<section class="card"><header class="sec"><h3>Notes</h3></header><textarea id="v_note" rows="4" class="${w.note!==s.note?"changed":""}" placeholder="Trail, conditions, how it felt, what to try next" aria-label="Notes for this setup">${esc(w.note)}</textarea></section>`;
+  if(clicks)h+=`<p class="foot">Clicks are counted from fully closed.</p>`;
+  return h;
+}
+function updateRow(k){
+  const b=curBike(),s=b&&curSetup(b),row=view.querySelector('.row[data-k="'+k+'"]');if(!s||!row)return;
+  const w=working(s),v=w.vals[k]==null?null:w.vals[k],sv=s.vals[k]==null?null:s.vals[k],ch=v!==sv;
+  row.classList.toggle("changed",ch);
+  row.querySelector("input").value=v==null?"":num(k,v);
+  const was=row.querySelector(".was");was.hidden=!ch;was.textContent=ch?wasText(k,sv):"";
+}
+function updateSaveBar(){
+  const b=curBike(),s=b&&curSetup(b),n=s&&drafts[s.id]&&ui.tab==="setup"?diff(s,drafts[s.id]).length:0;
+  $("#savebar").hidden=!n;
+  if(n)$("#saveN").textContent=n+(n===1?" unsaved change":" unsaved changes");
+  view.querySelectorAll(".chip[data-id]").forEach(c=>c.classList.toggle("dirty",!!drafts[c.dataset.id]));
+}
+function setDraft(s,fn){
+  const d=drafts[s.id]?{vals:{...obj(drafts[s.id].vals)},note:drafts[s.id].note||""}:{vals:{...s.vals},note:s.note};
+  fn(d);
+  if(diff(s,d).length)drafts[s.id]=d;else delete drafts[s.id];
+  saveDrafts();updateSaveBar();
+}
+function setVal(k,v){
+  const b=curBike(),s=b&&curSetup(b);if(!s)return;
+  setDraft(s,d=>{if(v==null)delete d.vals[k];else d.vals[k]=v});
+  updateRow(k);
+}
+
+function historyHtml(b){
+  const list=histOf(b.id),setups=setupsOf(b.id),names={};setups.forEach(s=>names[s.id]=s.name);
+  if(!list.length)return`<div class="empty"><h2>No saved changes yet</h2><p>Change something on the Setup tab and press Save. Each save is listed here with the date, what changed and your note.</p><button type="button" class="btn" data-act="tab" data-tab="setup">Go to setup</button></div>`;
+  const prev={};
+  list.forEach(e=>{e.changes=prev[e.setupId]?diff(prev[e.setupId],e):null;prev[e.setupId]=e});
+  let f=ui.hf&&names[ui.hf]?ui.hf:"";
+  let h="";
+  if(setups.length>1)h+=`<div class="chips"><button type="button" class="chip${f?"":" on"}" data-act="hist-filter" data-id="">All setups</button>`+setups.map(s=>`<button type="button" class="chip${f===s.id?" on":""}" data-act="hist-filter" data-id="${s.id}">${esc(s.name)}</button>`).join("")+`</div>`;
+  const shown=list.filter(e=>!f||e.setupId===f).reverse();
+  if(!shown.length)h+=`<div class="empty"><h2>Nothing saved for this setup yet</h2><p>Saves for this setup will show up here.</p></div>`;
+  for(const e of shown){
+    const set=KEYS.filter(k=>obj(e.vals)[k]!=null);
+    const valsHtml=`<div class="vals">${set.map(k=>`<div><span>${esc(keyLabel(k,b))}</span><b>${esc(fmt(k,e.vals[k]))}</b></div>`).join("")}</div>${e.note?`<p class="snote"><b>Notes:</b> ${esc(e.note)}</p>`:""}`;
+    h+=`<article class="h"><div class="h-top"><time>${esc(dTime(e.ts))}</time><span class="tag">${esc(names[e.setupId]||"Deleted setup")}</span></div>`;
+    if(e.msg)h+=`<p class="msg">${esc(e.msg)}</p>`;
+    if(e.changes&&e.changes.length)h+=`<ul class="diff">${diffHtml(e.changes,b)}</ul><details><summary>All values at this point</summary>${valsHtml}</details>`;
+    else if(e.changes)h+=`<ul class="diff"><li class="start">Saved without changes</li></ul>`;
+    else h+=`<ul class="diff"><li class="start">Starting point</li></ul>${valsHtml}`;
+    h+=`<div class="h-act">${names[e.setupId]?`<button type="button" class="link" data-act="hist-restore" data-id="${e.id}">Load these values</button>`:"<span></span>"}<button type="button" class="link quiet" data-act="hist-del" data-id="${e.id}" data-arm="Tap again to delete">Delete</button></div></article>`;
+  }
+  return h;
+}
+
+const SVC=[["fork_lower","Fork lower leg service"],["fork_full","Fork full service"],["shock_can","Shock air can service"],["shock_full","Shock full service"],["dropper","Dropper post service"],["brake_bleed","Brake bleed"],["brake_pads","Brake pads"],["tyres","Tyres / sealant"],["drivetrain","Chain / drivetrain"],["bearings","Bearings / pivots"],["wheels","Wheels / spokes"],["other","Something else"]];
+const svcTitle=s=>s.kind==="other"?(s.title||"Service"):(SVC.find(x=>x[0]===s.kind)||[0,s.title||"Service"])[1];
+function serviceHtml(b){
+  const list=svcOf(b.id);
+  let h=`<div class="shead"><div><h2>Service log</h2><p class="meta">${list.length?list.length+(list.length===1?" entry":" entries")+" for "+esc(b.name):"For "+esc(b.name)}</p></div><button type="button" class="btn primary" data-act="svc-new">Log service</button></div>`;
+  if(!list.length)return h+`<div class="empty"><h2>Nothing logged yet</h2><p>Log a lower leg service, an air can service, a brake bleed or anything else. Add a next-due date and it shows up here when it is getting close.</p></div>`;
+  const latest={};
+  list.forEach(s=>{const key=s.kind==="other"?"o:"+svcTitle(s).toLowerCase():s.kind;if(!latest[key])latest[key]=s});
+  const due=Object.values(latest).filter(s=>s.due).sort((a,b)=>a.due<b.due?-1:1);
+  if(due.length){
+    h+=`<section class="card"><header class="sec"><h3>Coming up</h3></header>`+due.map(s=>{
+      const n=dayDiff(s.due,today());
+      const cls=n<0?"over":n<=14?"soon":"";
+      const t=n<0?"Overdue by "+(-n)+(n===-1?" day":" days"):n===0?"Due today":n===1?"Due tomorrow":n<60?"In "+n+" days":"In "+Math.round(n/30.4)+" months";
+      return`<div class="due"><span>${esc(svcTitle(s))}<br><span class="row-s">Last done ${esc(ago(dayDiff(today(),s.date)))}, due ${esc(dShort(s.due))}</span></span><span class="pill ${cls}">${t}</span></div>`;
+    }).join("")+`</section>`;
+  }
+  for(const s of list){
+    const d=parseD(s.date),meta=[ago(dayDiff(today(),s.date))];
+    if(s.cost!=null)meta.push(String(s.cost).replace(".",",")+" €");
+    if(s.due)meta.push("next due "+dShort(s.due));
+    h+=`<button type="button" class="svc" data-act="svc-edit" data-id="${s.id}" aria-label="Edit ${esc(svcTitle(s))}"><span class="svc-d"><b>${d.getDate()}</b>${MON[d.getMonth()]} ${String(d.getFullYear()).slice(2)}</span><span class="svc-b"><span class="svc-t">${esc(svcTitle(s))}</span>${s.note?`<br><span class="svc-n">${esc(s.note)}</span>`:""}<br><span class="svc-m">${esc(meta.join(" · "))}</span></span></button>`;
+  }
+  return h;
+}
+
+/* ---------- sheets ---------- */
+let lastFocus=null;
+function openSheet(html,focusSel){
+  if(sheet.hidden)lastFocus=document.activeElement;
+  sheet.innerHTML='<div class="grab"></div>'+html;
+  sheet.hidden=false;scrim.hidden=false;document.body.classList.add("locked");sheet.scrollTop=0;
+  const f=focusSel&&sheet.querySelector(focusSel);
+  if(f)f.focus();else{sheet.tabIndex=-1;sheet.focus({preventScroll:true})}
+}
+function closeSheet(){
+  if(sheet.hidden)return;
+  sheet.hidden=true;scrim.hidden=true;sheet.innerHTML="";document.body.classList.remove("locked");
+  if(lastFocus&&lastFocus.isConnected)try{lastFocus.focus({preventScroll:true})}catch(e){}
+  if(pending)render();
+}
+let toastT=null;
+function toast(t){const e=$("#toast");e.textContent=t;e.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{e.hidden=true},2800)}
+
+const segRadio=(name,opts,val)=>`<div class="seg" role="radiogroup">${opts.map(([v,l])=>`<label><input type="radio" id="${name}_${v}" name="${name}" value="${v}"${v===val?" checked":""}><span>${l}</span></label>`).join("")}</div>`;
+function partFields(p,cfg){
+  const opts=[["lsc","LSC"],["hsc","HSC"],["lsr","LSR"],["hsr","HSR"],["tok","Volume spacers"]];
+  return`<label class="fld"><span>Model (optional)</span><input id="bk_${p}name" maxlength="40" autocomplete="off" value="${esc(cfg.name)}" placeholder="${p==="f"?"e.g. Fox 36 Grip2":"e.g. Float X2"}"></label>
+  <div class="setrow"><span class="lbl">Spring</span>${segRadio("bk_"+p+"spring",[["air","Air"],["coil","Coil"]],cfg.spring)}</div>
+  <div class="lbl">Adjusters it has</div>
+  <div class="togs">${opts.map(([v,l])=>`<label class="tog"><input type="checkbox" id="bk_${p}_${v}" name="bk_${p}adj" value="${v}"${cfg.adj.includes(v)?" checked":""}><span>${l}</span></label>`).join("")}</div>`;
+}
+function bikeSheet(id){
+  const b=id&&docs[id]?normBike({id,...docs[id]}):null;
+  const f=b?b.fork:{name:"",spring:"air",adj:["lsc","lsr","tok"]},s=b?b.shock:{name:"",spring:"air",adj:["lsc","lsr","tok"],on:true};
+  openSheet(`<h2>${b?"Edit bike":"Add a bike"}</h2>
+  <form data-submit="bike-save" data-id="${b?b.id:""}">
+    <label class="fld"><span>Name</span><input id="bk_name" required maxlength="40" autocomplete="off" value="${esc(b?b.name:"")}" placeholder="e.g. Enduro, Trek Slash"></label>
+    <fieldset><legend>Fork</legend>${partFields("f",f)}</fieldset>
+    <fieldset><legend>Rear shock</legend>
+      <label class="check"><input type="checkbox" id="bk_son"${s.on?" checked":""}>This bike has a rear shock</label>
+      <div id="bk_sbox" class="stack"${s.on?"":" hidden"}>${partFields("s",s)}</div>
+    </fieldset>
+    <p class="hint">Switch on only what your fork and shock have.</p>
+    <div class="actions">${b?`<button type="button" class="btn danger grow" data-act="bike-del" data-id="${b.id}" data-arm="Tap again to delete everything">Delete bike</button>`:""}<button type="button" class="btn ghost" data-act="close">Cancel</button><button type="submit" class="btn primary">Save bike</button></div>
+  </form>`,b?null:"#bk_name");
+}
+function setupSheet(fromId,name){
+  const b=curBike();if(!b)return;
+  const list=setupsOf(b.id);
+  openSheet(`<h2>New setup</h2>
+  <form data-submit="setup-create">
+    <label class="fld"><span>Name</span><input id="ns_name" required maxlength="40" autocomplete="off" value="${esc(name||"")}" placeholder="e.g. Trail, Bike park, Wet"></label>
+    ${list.length?`<label class="fld"><span>Start from</span><select id="ns_from">${list.map(s=>`<option value="${s.id}"${s.id===fromId?" selected":""}>Copy of ${esc(s.name)}</option>`).join("")}<option value="">Empty</option></select></label>`:""}
+    <div class="actions"><button type="button" class="btn ghost" data-act="close">Cancel</button><button type="submit" class="btn primary">Create setup</button></div>
+  </form>`,"#ns_name");
+}
+function svcSheet(id){
+  const b=curBike();if(!b)return;
+  const s=id&&docs[id]?{id,...docs[id]}:null,kind=s?s.kind:"fork_lower";
+  openSheet(`<h2>${s?"Edit service":"Log a service"}</h2>
+  <form data-submit="svc-save" data-id="${s?s.id:""}">
+    <label class="fld"><span>What was done</span><select id="sv_kind">${SVC.map(([v,l])=>`<option value="${v}"${v===kind?" selected":""}>${l}</option>`).join("")}</select></label>
+    <label class="fld" id="sv_titleBox"${kind==="other"?"":" hidden"}><span>Describe it</span><input id="sv_title" maxlength="60" autocomplete="off" value="${esc(s&&s.kind==="other"?s.title||"":"")}" placeholder="e.g. New headset"></label>
+    <div class="two">
+      <label class="fld"><span>Date</span><input id="sv_date" type="date" required value="${esc(s?s.date:today())}"></label>
+      <label class="fld"><span>Cost in € (optional)</span><input id="sv_cost" type="text" inputmode="decimal" autocomplete="off" value="${s&&s.cost!=null?esc(String(s.cost).replace(".",",")):""}"></label>
+    </div>
+    <label class="fld"><span>Notes (optional)</span><textarea id="sv_note" rows="3" placeholder="Parts, oil weight and volumes, who did it">${esc(s?s.note||"":"")}</textarea></label>
+    <label class="fld"><span>Next due (optional)</span><input id="sv_due" type="date" value="${esc(s&&s.due?s.due:"")}"></label>
+    <div class="quick">${[[3,"In 3 months"],[6,"In 6 months"],[12,"In a year"]].map(([m,l])=>`<button type="button" class="link" data-act="svc-due" data-m="${m}">${l}</button>`).join("")}<button type="button" class="link quiet" data-act="svc-due" data-m="0">Clear</button></div>
+    <div class="actions">${s?`<button type="button" class="btn danger grow" data-act="svc-del" data-id="${s.id}" data-arm="Tap again to delete">Delete</button>`:""}<button type="button" class="btn ghost" data-act="close">Cancel</button><button type="submit" class="btn primary">Save</button></div>
+  </form>`);
+}
+function settingsSheet(){
+  openSheet(`<h2>Settings</h2>
+  <div class="stack">
+    <div class="setrow"><span>Tyre pressure</span>${unitSeg("tyre")}</div>
+    <div class="setrow"><span>Fork and shock pressure</span>${unitSeg("susp")}</div>
+    <p class="hint">Units only change how pressures are shown.</p>
+    <div class="lbl" style="margin-top:8px">Backup</div>
+    <p class="hint">Your data is kept only in this browser. Export a backup file now and then.</p>
+    <div class="actions" style="justify-content:flex-start"><button type="button" class="btn" data-act="export">Export backup</button><label class="btn" for="imp">Import backup</label><input type="file" id="imp" accept="application/json,.json" hidden></div>
+    <p class="hint">${(()=>{const t=LS.get("sus.backup",0);return t?"Last export "+ago(dayDiff(today(),iso(new Date(t))))+".":"No backup exported yet."})()}</p>
+    <div class="sync-line" id="syncLine"><i></i><span></span></div>
+    <div class="actions"><button type="button" class="btn primary" data-act="close">Done</button></div>
+  </div>`);
+  status();
+}
+function setupText(b,s){
+  const w=working(s),lines=[b.name+" · "+s.name+" ("+dShort(today())+")"];
+  for(const sec of fields(b)){
+    const parts=sec.rows.filter(r=>w.vals[r.k]!=null).map(r=>r.name+" "+fmt(r.k,w.vals[r.k]));
+    if(parts.length)lines.push(sec.title+(sec.sub?" ("+sec.sub+")":"")+": "+parts.join(", "));
+  }
+  if(w.note)lines.push("Notes: "+w.note);
+  return lines.join("\n");
+}
+
+/* ---------- actions ---------- */
+const acts={
+  close:closeSheet,
+  retry(){if(mode==="down"&&col)subscribe();else flush()},
+  tab(el){ui.tab=el.dataset.tab;saveUi();render(true);window.scrollTo(0,0)},
+  settings:settingsSheet,
+  unit(el){
+    const s=settings();s[el.dataset.which]=el.dataset.u;
+    put("_settings",{t:"settings",tyre:s.tyre,susp:s.susp});
+    render(true);
+    if(!sheet.hidden)settingsSheet();
+  },
+
+  "bike-menu"(){
+    const l=bikes();if(!l.length){bikeSheet();return}
+    openSheet(`<h2>Your bikes</h2><div class="stack">`+l.map(x=>{const b=normBike(x),n=setupsOf(b.id).length;
+      const sub=[b.fork.name,b.shock.on?b.shock.name:"",n+(n===1?" setup":" setups")].filter(Boolean).join(" · ");
+      return`<div class="pick"><button type="button" class="pick-main${b.id===ui.bike?" on":""}" data-act="bike-pick" data-id="${b.id}"><b>${esc(b.name)}</b><span>${esc(sub)}</span></button><button type="button" class="icon-btn" data-act="bike-edit" data-id="${b.id}" aria-label="Edit ${esc(b.name)}">Edit</button></div>`}).join("")+
+      `<button type="button" class="btn block" data-act="bike-new">Add a bike</button></div>`);
+  },
+  "bike-pick"(el){ui.bike=el.dataset.id;ui.hf="";saveUi();closeSheet();render(true);window.scrollTo(0,0)},
+  "bike-new"(){bikeSheet()},
+  "bike-edit"(el){bikeSheet(el.dataset.id)},
+  "bike-save"(form){
+    const name=$("#bk_name").value.trim();if(!name){$("#bk_name").focus();return}
+    const part=p=>({name:$("#bk_"+p+"name").value.trim(),spring:(form.querySelector('input[name="bk_'+p+'spring"]:checked')||{}).value==="coil"?"coil":"air",adj:[...form.querySelectorAll('input[name="bk_'+p+'adj"]:checked')].map(i=>i.value)});
+    const fork=part("f"),shock={...part("s"),on:$("#bk_son").checked};
+    const id=form.dataset.id;
+    if(id&&docs[id]){put(id,{...docs[id],name,fork,shock});toast("Bike saved")}
+    else{
+      const bid=newId("b"),sid=newId("s"),now=Date.now();
+      put(bid,{t:"bike",name,fork,shock,active:sid,ts:now});
+      put(sid,{t:"setup",bikeId:bid,name:"Base setup",vals:{},note:"",ts:now,updated:now});
+      ui.bike=bid;ui.tab="setup";ui.hf="";saveUi();toast("Bike added. Fill in your first setup.");
+    }
+    closeSheet();render(true);
+  },
+  "bike-del"(el){
+    const id=el.dataset.id;
+    Object.keys(docs).forEach(k=>{if(docs[k]&&docs[k].bikeId===id){delete drafts[k];del(k)}});
+    del(id);saveDrafts();delete ui.setup[id];saveUi();
+    closeSheet();render(true);toast("Bike deleted");
+  },
+
+  "setup-pick"(el){const b=curBike();ui.setup[b.id]=el.dataset.id;saveUi();render(true)},
+  "setup-new"(){const b=curBike(),s=b&&curSetup(b);setupSheet(s?s.id:"")},
+  "setup-create"(){
+    const b=curBike(),name=$("#ns_name").value.trim();if(!b||!name){$("#ns_name").focus();return}
+    const from=$("#ns_from")?$("#ns_from").value:"",src=from&&docs[from]?docs[from]:null,sid=newId("s"),now=Date.now();
+    const vals=src?{...obj(src.vals)}:{},note=src?src.note||"":"";
+    put(sid,{t:"setup",bikeId:b.id,name,vals,note,ts:now,updated:now});
+    if(src&&(Object.keys(vals).length||note))put(newId("h"),{t:"hist",bikeId:b.id,setupId:sid,vals,note,msg:"Copied from "+src.name,ts:now});
+    ui.setup[b.id]=sid;ui.tab="setup";saveUi();closeSheet();render(true);toast("Setup created");
+  },
+  "setup-menu"(){
+    const b=curBike(),s=b&&curSetup(b);if(!s)return;
+    const only=setupsOf(b.id).length<2;
+    openSheet(`<h2>${esc(s.name)}</h2>
+    <form data-submit="setup-rename"><label class="fld"><span>Name</span><input id="su_name" required maxlength="40" autocomplete="off" value="${esc(s.name)}"></label>
+      <div class="actions"><button type="submit" class="btn">Rename</button></div></form>
+    <div class="stack" style="margin-top:12px">
+      ${b.active===s.id?`<p class="hint">This is the setup marked as on the bike.</p>`:`<button type="button" class="btn block" data-act="setup-active">Mark as on the bike</button>`}
+      <button type="button" class="btn block" data-act="setup-dup">Duplicate</button>
+      <button type="button" class="btn block" data-act="setup-copy">Copy as text</button>
+      ${only?"":`<button type="button" class="btn block danger" data-act="setup-del" data-arm="Tap again to delete setup and its history">Delete setup</button>`}
+      <button type="button" class="btn block ghost" data-act="close">Close</button>
+    </div>`);
+  },
+  "setup-rename"(){
+    const b=curBike(),s=b&&curSetup(b),name=$("#su_name").value.trim();if(!s||!name)return;
+    put(s.id,{...docs[s.id],name});closeSheet();render(true);toast("Renamed");
+  },
+  "setup-active"(){
+    const b=curBike(),s=b&&curSetup(b);if(!s)return;
+    put(b.id,{...docs[b.id],active:s.id});closeSheet();render(true);toast(s.name+" is now on the bike");
+  },
+  "setup-dup"(){const b=curBike(),s=b&&curSetup(b);if(s)setupSheet(s.id,s.name+" copy")},
+  "setup-copy"(){
+    const b=curBike(),s=b&&curSetup(b);if(!s)return;
+    const text=setupText(b,s);
+    const fallback=()=>{openSheet(`<h2>Copy as text</h2><div class="stack"><textarea id="cp_text" rows="8" readonly>${esc(text)}</textarea><p class="hint">Select the text and copy it.</p><div class="actions"><button type="button" class="btn primary" data-act="close">Done</button></div></div>`);const t=$("#cp_text");t.focus();t.select()};
+    try{navigator.clipboard.writeText(text).then(()=>{closeSheet();toast("Copied")},fallback)}catch(e){fallback()}
+  },
+  "setup-del"(){
+    const b=curBike(),s=b&&curSetup(b);if(!s)return;
+    Object.keys(docs).forEach(k=>{if(docs[k]&&docs[k].t==="hist"&&docs[k].setupId===s.id)del(k)});
+    del(s.id);delete drafts[s.id];saveDrafts();
+    if(b.active===s.id){const rest=setupsOf(b.id);put(b.id,{...docs[b.id],active:rest.length?rest[0].id:null})}
+    delete ui.setup[b.id];saveUi();closeSheet();render(true);toast("Setup deleted");
+  },
+
+  step(el){
+    const k=el.dataset.k,up=el.dataset.d==="1",b=curBike(),s=b&&curSetup(b);if(!s)return;
+    const m=metaK(k),v=working(s).vals[k];
+    let d;
+    if(v==null)d=m.start;
+    else{const x=toDisp(k,v)/m.step;d=up?(Math.floor(x+1e-6)+1)*m.step:(Math.ceil(x-1e-6)-1)*m.step}
+    setVal(k,canon(k,Math.max(0,d)));
+  },
+  discard(){
+    const b=curBike(),s=b&&curSetup(b);if(!s)return;
+    delete drafts[s.id];saveDrafts();render(true);toast("Changes discarded");
+  },
+  "save-open"(){
+    const b=curBike(),s=b&&curSetup(b);if(!s||!drafts[s.id])return;
+    const first=!all("hist").some(h=>h.setupId===s.id);
+    openSheet(`<h2>Save ${esc(s.name)}</h2>
+    <ul class="diff" style="margin:0 0 12px">${diffHtml(diff(s,drafts[s.id]),b)}</ul>
+    <form data-submit="save-do">
+      <label class="fld"><span>${first?"Note for this starting point (optional)":"What did you change, and why? (optional)"}</span><textarea id="sv_msg" rows="2" placeholder="${first?"e.g. Factory recommended settings for my weight":"e.g. Harsh on braking bumps, opened LSC two clicks"}"></textarea></label>
+      <div class="actions"><button type="button" class="btn ghost" data-act="close">Cancel</button><button type="submit" class="btn primary">Save to history</button></div>
+    </form>`);
+  },
+  "save-do"(){
+    const b=curBike(),s=b&&curSetup(b);if(!s||!drafts[s.id])return;
+    const w=working(s),now=Date.now(),msg=$("#sv_msg").value.trim();
+    put(s.id,{...docs[s.id],vals:w.vals,note:w.note,updated:now});
+    put(newId("h"),{t:"hist",bikeId:b.id,setupId:s.id,vals:w.vals,note:w.note,msg,ts:now});
+    delete drafts[s.id];saveDrafts();
+    const old=all("hist").filter(h=>h.setupId===s.id).sort((a,b)=>b.ts-a.ts).slice(40);
+    old.forEach(h=>del(h.id));
+    closeSheet();render(true);toast("Saved");
+  },
+
+  "hist-filter"(el){ui.hf=el.dataset.id;saveUi();render(true)},
+  "hist-restore"(el){
+    const e=docs[el.dataset.id],b=curBike();if(!e||!b||!docs[e.setupId])return;
+    const s={id:e.setupId,...docs[e.setupId]};s.vals=obj(s.vals);s.note=s.note||"";
+    const d={vals:{...obj(e.vals)},note:e.note||""};
+    if(!diff(s,d).length){toast("These are already the current values");return}
+    drafts[s.id]=d;saveDrafts();ui.setup[b.id]=s.id;ui.tab="setup";saveUi();render(true);window.scrollTo(0,0);
+    toast("Loaded into "+s.name+". Check and save to keep it.");
+  },
+  "hist-del"(el){del(el.dataset.id);render(true);toast("Entry deleted")},
+
+  "svc-new"(){svcSheet()},
+  "svc-edit"(el){svcSheet(el.dataset.id)},
+  "svc-due"(el){const m=+el.dataset.m;$("#sv_due").value=m?addMonths($("#sv_date").value||today(),m):""},
+  "svc-save"(form){
+    const b=curBike();if(!b)return;
+    const kind=$("#sv_kind").value,title=$("#sv_title").value.trim(),date=$("#sv_date").value;
+    if(!date){$("#sv_date").focus();return}
+    if(kind==="other"&&!title){$("#sv_title").focus();return}
+    const c=parseFloat($("#sv_cost").value.trim().replace(",",".")),id=form.dataset.id;
+    const body={t:"svc",bikeId:b.id,kind,title:kind==="other"?title:"",date,note:$("#sv_note").value.trim(),cost:isFinite(c)&&c>=0?Math.round(c*100)/100:null,due:$("#sv_due").value||null,ts:id&&docs[id]?docs[id].ts:Date.now()};
+    put(id&&docs[id]?id:newId("v"),body);closeSheet();render(true);toast("Service saved");
+  },
+  "svc-del"(el){del(el.dataset.id);closeSheet();render(true);toast("Service deleted")},
+
+  export(){
+    const name="suspension-log-"+today()+".json";
+    const file=new File([JSON.stringify({app:"suspension-log",v:1,exportedAt:new Date().toISOString(),docs},null,1)],name,{type:"application/json"});
+    const done=()=>{LS.set("sus.backup",Date.now());toast("Backup exported");if(!sheet.hidden)settingsSheet()};
+    if(navigator.maxTouchPoints>0&&navigator.canShare&&navigator.canShare({files:[file]})){navigator.share({files:[file]}).then(done,()=>{});return}
+    const a=document.createElement("a"),u=URL.createObjectURL(file);
+    a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000);done();
+  },
+  "import-do"(){
+    if(!pendingImport)return;
+    docs=pendingImport;pendingImport=null;drafts={};ui={setup:{},tab:"setup"};
+    LS.set("sus.docs.v1",docs);saveDrafts();saveUi();closeSheet();render(true);toast("Backup imported");
+  }
+};
+let pendingImport=null;
+document.addEventListener("change",e=>{
+  if(e.target.id!=="imp"||!e.target.files||!e.target.files[0])return;
+  const r=new FileReader();
+  r.onerror=()=>toast("That file could not be read");
+  r.onload=()=>{
+    let d=null;try{d=JSON.parse(r.result)}catch(err){}
+    const got=d&&obj(d.docs),clean={};
+    for(const k in got){if(got[k]&&typeof got[k]==="object"&&typeof got[k].t==="string")clean[k]=got[k]}
+    const n=Object.values(clean).filter(x=>x.t==="bike").length;
+    if(!d||d.app!=="suspension-log"||!n){toast("That is not a Suspension Log backup");return}
+    pendingImport=clean;
+    openSheet(`<h2>Import backup</h2><div class="stack"><p>This backup holds ${n} ${n===1?"bike":"bikes"}${d.exportedAt?", exported "+esc(dShort(String(d.exportedAt).slice(0,10))):""}. Importing replaces everything saved on this device.</p><div class="actions"><button type="button" class="btn ghost" data-act="close">Cancel</button><button type="button" class="btn primary" data-act="import-do" data-arm="Tap again to replace">Import</button></div></div>`);
+  };
+  r.readAsText(e.target.files[0]);
+});
+
+function arm(el){
+  el.classList.add("armed");el.dataset.label=el.textContent;el.textContent=el.dataset.arm;
+  setTimeout(()=>{if(el.isConnected&&el.classList.contains("armed")){el.classList.remove("armed");el.textContent=el.dataset.label}},3500);
+}
+document.addEventListener("click",e=>{
+  const el=e.target.closest("[data-act]");if(!el)return;
+  if(el.dataset.arm&&!el.classList.contains("armed")){arm(el);return}
+  const f=acts[el.dataset.act];if(f)f(el,e);
+});
+document.addEventListener("submit",e=>{
+  e.preventDefault();
+  const f=acts[e.target.dataset.submit];if(f)f(e.target);
+});
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape")closeSheet();
+  if(e.key==="Enter"&&e.target.closest&&e.target.closest(".step"))e.target.blur();
+});
+view.addEventListener("change",e=>{
+  const row=e.target.closest(".row");if(!row||e.target.tagName!=="INPUT")return;
+  const k=row.dataset.k,t=e.target.value.trim().replace(",",".");
+  if(t===""){setVal(k,null);return}
+  const n=parseFloat(t);
+  if(!isFinite(n)||n<0||n>100000){updateRow(k);toast("That is not a number");return}
+  setVal(k,canon(k,n));
+});
+view.addEventListener("input",e=>{
+  if(e.target.id!=="v_note")return;
+  const b=curBike(),s=b&&curSetup(b);if(!s)return;
+  const val=e.target.value;
+  setDraft(s,d=>{d.note=val});
+  e.target.classList.toggle("changed",val!==s.note);
+});
+view.addEventListener("focusin",e=>{if(e.target.closest&&e.target.closest(".step")&&e.target.select)e.target.select()});
+view.addEventListener("focusout",()=>{if(pending)setTimeout(()=>{if(pending&&sheet.hidden)render()},0)});
+sheet.addEventListener("change",e=>{
+  if(e.target.id==="bk_son")$("#bk_sbox").hidden=!e.target.checked;
+  if(e.target.id==="sv_kind")$("#sv_titleBox").hidden=e.target.value!=="other";
+});
+
+status();render(true);initSync();
+try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
+if("serviceWorker" in navigator)window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js").catch(()=>{})});
+})();
+</script>
+</body>
+</html>
